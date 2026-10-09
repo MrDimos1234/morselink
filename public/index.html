@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>MorseLink</title>
+
+  <link
+    rel="stylesheet"
+    href="/style.css"
+  >
+</head>
+
+<body>
+
+  <main class="app">
+
+    <header class="topbar">
+
+      <div>
+        <div class="logo">
+          Morse<span>Link</span>
+        </div>
+
+        <div class="subtitle">
+          Secure-ish Morse messaging
+        </div>
+      </div>
+
+      <div class="connection">
+        <span
+          id="statusDot"
+          class="status-dot offline"
+        ></span>
+
+        <span id="statusText">
+          Offline
+        </span>
+      </div>
+
+    </header>
+
+
+    <section class="identity card">
+
+      <div class="identity-info">
+
+        <span class="label">
+          Your MorseLink key
+        </span>
+
+        <strong id="myKey">
+          ------
+        </strong>
+
+      </div>
+
+      <button id="copyKey">
+        Copy key
+      </button>
+
+    </section>
+
+
+    <section class="card composer">
+
+      <div class="section-title">
+        <div>
+          <h2>Send a message</h2>
+
+          <p>
+            Your message is encoded before transmission.
+          </p>
+        </div>
+      </div>
+
+
+      <label for="receiver">
+        Receiver key
+      </label>
+
+      <input
+        id="receiver"
+        maxlength="6"
+        placeholder="A7K29P"
+        autocomplete="off"
+      >
+
+
+      <label for="message">
+        Message
+      </label>
+
+      <textarea
+        id="message"
+        maxlength="2000"
+        placeholder="Write your message..."
+      ></textarea>
+
+
+      <div class="pipeline">
+
+        <span>TEXT</span>
+        <span class="arrow">→</span>
+
+        <span>BASE64</span>
+        <span class="arrow">→</span>
+
+        <span>CAESAR +4</span>
+        <span class="arrow">→</span>
+
+        <span>MORSE</span>
+
+      </div>
+
+
+      <button
+        id="send"
+        class="send-button"
+      >
+        Send through Morse
+      </button>
+
+
+      <div
+        id="sendStatus"
+        class="send-status"
+      ></div>
+
+    </section>
+
+
+    <section class="card messages-card">
+
+      <div class="messages-header">
+
+        <div>
+          <h2>Messages</h2>
+
+          <p>
+            Your conversations
+          </p>
+        </div>
+
+        <button id="refresh">
+          Refresh
+        </button>
+
+      </div>
+
+
+      <div id="messages">
+
+        <div class="empty">
+          <div class="empty-icon">
+            •−−•
+          </div>
+
+          <div>
+            No messages yet.
+          </div>
+
+          <span>
+            Send a Morse message to get started.
+          </span>
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <script src="/app.js"></script>
+
+</body>
+
+</html>
