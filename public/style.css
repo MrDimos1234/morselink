@@ -614,3 +614,195 @@ textarea {
     order: -1;
   }
 }
+
+
+/* MorseLink contacts */
+.contacts-panel {
+  margin: 0 0 24px;
+  padding: 16px;
+  border: 1px solid var(--border-color, #303746);
+  border-radius: 12px;
+  background: var(--card-background, rgba(255, 255, 255, 0.025));
+}
+
+.contacts-panel h3 {
+  margin: 0 0 14px;
+}
+
+.contacts-panel label {
+  display: block;
+  margin: 12px 0 6px;
+}
+
+.contacts-panel input,
+.contacts-panel select {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #303746);
+  border-radius: 8px;
+  background: #151922;
+  color: inherit;
+  font: inherit;
+}
+
+.contacts-panel .contact-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.contacts-panel button {
+  margin-top: 10px;
+}
+
+.contacts-panel .contact-actions button {
+  flex: 1;
+}
+
+.contacts-panel .contact-status {
+  margin: 10px 0 0;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+
+
+/* MorseLink conversation list */
+.conversation-list-title {
+  margin: 18px 0 10px;
+  font-size: 1rem;
+}
+
+.conversation-list {
+  display: grid;
+  gap: 8px;
+}
+
+.conversation-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  text-align: left;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border-color, #303746);
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.conversation-item:hover,
+.conversation-item.active {
+  border-color: var(--accent-color, #718cff);
+  background: rgba(113, 140, 255, 0.09);
+}
+
+.conversation-details {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.conversation-key,
+.conversation-preview,
+.conversation-time {
+  font-size: 0.82rem;
+  opacity: 0.75;
+}
+
+.conversation-preview {
+  overflow-wrap: anywhere;
+}
+
+.conversation-time {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.conversation-empty {
+  opacity: 0.75;
+  font-size: 0.9rem;
+}
+
+
+
+/* MorseLink conversation tabs and unread badges */
+.conversation-list {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 2px 12px;
+  scroll-snap-type: x proximity;
+}
+
+.conversation-item {
+  box-sizing: border-box;
+  flex: 0 0 230px;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.conversation-item.active {
+  border-color: var(--accent-color, #718cff);
+  background: rgba(113, 140, 255, 0.12);
+}
+
+.conversation-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.conversation-unread {
+  display: inline-flex;
+  min-width: 20px;
+  min-height: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #4778ff;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.conversation-list-title {
+  margin-top: 18px;
+}
+
+.conversation-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* Unread message count */
+.conversation-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.conversation-unread {
+  display: inline-flex;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0 5px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #4778ff;
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 700;
+}

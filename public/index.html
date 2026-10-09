@@ -81,6 +81,39 @@
       </div>
 
 
+      <div class="contacts-panel">
+        <h3>Contacts</h3>
+
+        <label for="contactSelect">Saved contacts</label>
+        <select id="contactSelect">
+          <option value="">No contacts saved yet</option>
+        </select>
+
+        <div class="contact-actions">
+          <button type="button" id="useContact">Use contact</button>
+          <button type="button" id="deleteContact">Delete</button>
+        </div>
+
+        <label for="contactName">Contact nickname</label>
+        <input
+          id="contactName"
+          maxlength="40"
+          placeholder="e.g. Alex"
+          autocomplete="off"
+        >
+
+        <label for="contactKey">Their 6-character key</label>
+        <input
+          id="contactKey"
+          maxlength="6"
+          placeholder="A7K29P"
+          autocomplete="off"
+        >
+
+        <button type="button" id="saveContact">Save contact</button>
+        <p id="contactStatus" class="contact-status" aria-live="polite"></p>
+      </div>
+
       <label for="receiver">
         Receiver key
       </label>
@@ -133,6 +166,13 @@
         class="send-status"
       ></div>
 
+      <button
+        id="incomingAudioToggle"
+        type="button"
+      >
+        Enable incoming Morse audio
+      </button>
+
     </section>
 
 
@@ -155,6 +195,10 @@
       </div>
 
 
+      <h3 class="conversation-list-title">Conversations</h3>
+      <div id="conversationList" class="conversation-list"></div>
+
+      
       <div id="messages">
 
         <div class="empty">

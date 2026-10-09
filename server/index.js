@@ -17,7 +17,7 @@ const HOST = process.env.HOST || "0.0.0.0";
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "..", "public")));
 
-function generateUserKey() {
+async function generateUserKey() {
   const characters = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
   let key;
@@ -28,7 +28,7 @@ function generateUserKey() {
     for (let i = 0; i < 6; i++) {
       key += characters[crypto.randomInt(0, characters.length)];
     }
-  } while (database.userExists(key));
+  } while (await database.userExists(key));
 
   return key;
 }
@@ -51,37 +51,81 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.post("/api/users", (req, res) => {
-  const userKey = generateUserKey();
+app.post("/api/users", async (req, res) => {
+  const userKey = await generateUserKey();
 
-  database.createUser(userKey);
+  await database.createUser(userKey);
 
   res.json({
     userKey
   });
 });
 
-app.get("/api/users/:key", (req, res) => {
+app.get("/api/users/:key", async (req, res) => {
   const userKey = req.params.key.toUpperCase();
 
   res.json({
-    exists: database.userExists(userKey)
+    exists: await database.userExists(userKey)
   });
 });
 
-app.get("/api/messages/:key", (req, res) => {
+app.get("/api/keys/:key", async (req, res) => {
   const userKey = req.params.key.toUpperCase();
 
-  if (!database.userExists(userKey)) {
+  if (!(await database.userExists(userKey))) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  res.json({
+    userKey,
+    publicKey: await database.getUserPublicKey(userKey)
+  });
+});
+
+app.put("/api/keys/:key", async (req, res) => {
+  const userKey = req.params.key.toUpperCase();
+  const publicKey = String(req.body.publicKey || "");
+
+  if (!(await database.userExists(userKey))) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  // Expected format: base64url-encoded raw P-256 public key.
+  if (!/^[A-Za-z0-9_-]{80,100}$/.test(publicKey)) {
+    return res.status(400).json({ error: "Invalid public key format" });
+  }
+
+  const result = await database.setUserPublicKey(userKey, publicKey);
+
+  if (result === "exists") {
+    return res.status(409).json({
+      error: "A public key is already registered for this account"
+    });
+  }
+
+  if (result === "not_found") {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  res.json({
+    saved: result === "saved",
+    publicKeyRegistered: true
+  });
+});
+
+app.get("/api/messages/:key", async (req, res) => {
+  const userKey = req.params.key.toUpperCase();
+
+  if (!(await database.userExists(userKey))) {
     return res.status(404).json({
       error: "User not found"
     });
   }
 
-  res.json(database.getMessagesForUser(userKey));
+  res.json(await database.getMessagesForUser(userKey));
 });
 
-app.post("/api/messages", (req, res) => {
+app.post("/api/messages", async (req, res) => {
   const senderKey = String(req.body.senderKey || "").toUpperCase();
   const receiverKey = String(req.body.receiverKey || "").toUpperCase();
   const morse = String(req.body.morse || "").trim();
@@ -98,13 +142,13 @@ app.post("/api/messages", (req, res) => {
     });
   }
 
-  if (!database.userExists(senderKey)) {
+  if (!(await database.userExists(senderKey))) {
     return res.status(404).json({
       error: "Sender key does not exist"
     });
   }
 
-  if (!database.userExists(receiverKey)) {
+  if (!(await database.userExists(receiverKey))) {
     return res.status(404).json({
       error: "Receiver key does not exist"
     });
@@ -122,7 +166,7 @@ app.post("/api/messages", (req, res) => {
     });
   }
 
-  const message = database.addMessage({
+  const message = await database.addMessage({
     senderKey,
     receiverKey,
     morse,
@@ -142,14 +186,14 @@ wss.on("connection", ws => {
     type: "connected"
   }));
 
-  ws.on("message", raw => {
+  ws.on("message", async raw => {
     try {
       const data = JSON.parse(raw.toString());
 
       if (data.type === "identify") {
         const userKey = String(data.userKey || "").toUpperCase();
 
-        if (!database.userExists(userKey)) {
+        if (!(await database.userExists(userKey))) {
           ws.send(JSON.stringify({
             type: "error",
             error: "Invalid user key"
@@ -173,6 +217,9 @@ wss.on("connection", ws => {
   });
 });
 
-server.listen(PORT, HOST, () => {
+database.init().then(() => server.listen(PORT, HOST, () => {
   console.log(`MorseLink running on http://${HOST}:${PORT}`);
+})).catch(error => {
+  console.error("MorseLink startup failed:", error);
+  process.exit(1);
 });

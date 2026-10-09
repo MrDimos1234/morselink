@@ -1,5 +1,7 @@
 let myKey = null;
 let socket = null;
+let cachedMessages = [];
+let selectedConversationKey = "";
 
 const BASE64_ALPHABET =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
@@ -78,6 +80,7 @@ const messageElement = document.getElementById("message");
 const sendButton = document.getElementById("send");
 const sendStatus = document.getElementById("sendStatus");
 const messagesElement = document.getElementById("messages");
+const conversationListElement = document.getElementById("conversationList");
 const refreshButton = document.getElementById("refresh");
 const copyKeyButton = document.getElementById("copyKey");
 const statusDot = document.getElementById("statusDot");
@@ -266,6 +269,9 @@ async function createUser() {
   localStorage.setItem("morselinkKey", myKey);
 
   showKey();
+  await ensureEncryptionKeys().catch(error => {
+    console.error("Encryption key setup failed:", error);
+  });
   connectWebSocket();
   loadMessages();
 }
@@ -297,6 +303,9 @@ async function initialize() {
   myKey = savedKey;
 
   showKey();
+  await ensureEncryptionKeys().catch(error => {
+    console.error("Encryption key setup failed:", error);
+  });
   connectWebSocket();
   loadMessages();
 }
@@ -348,6 +357,22 @@ function connectWebSocket() {
 
     if (data.type === "message") {
       loadMessages();
+
+      const incoming = data.message;
+
+      if (
+        incomingAudioEnabled &&
+        incoming &&
+        incoming.receiverKey === myKey
+      ) {
+        try {
+          playMorseAudio(
+            decodeMessage(incoming.morse).text
+          );
+        } catch (error) {
+          console.warn("Incoming Morse audio failed:", error);
+        }
+      }
     }
   });
 }
@@ -363,11 +388,195 @@ async function loadMessages() {
 
   const messages = await response.json();
 
+  cachedMessages = messages;
+
+  if (selectedConversationKey) {
+    markConversationRead(selectedConversationKey, messages);
+  }
+
+  renderConversations(messages);
   renderMessages(messages);
 }
 
+
+function getReadMarkers() {
+  try {
+    return JSON.parse(
+      localStorage.getItem(`morselinkReadThrough:${myKey}`) || "{}"
+    );
+  } catch {
+    return {};
+  }
+}
+
+function markConversationRead(key, messages) {
+  if (!key || !myKey) return;
+
+  const markers = getReadMarkers();
+  const latestIncomingId = messages.reduce((latest, message) => {
+    if (
+      message.senderKey === key &&
+      message.receiverKey === myKey
+    ) {
+      return Math.max(latest, Number(message.id) || 0);
+    }
+
+    return latest;
+  }, 0);
+
+  markers[key] = Math.max(
+    Number(markers[key]) || 0,
+    latestIncomingId
+  );
+
+  try {
+    localStorage.setItem(
+      `morselinkReadThrough:${myKey}`,
+      JSON.stringify(markers)
+    );
+  } catch (error) {
+    console.warn("Could not save read status.", error);
+  }
+}
+
+function renderConversations(messages) {
+  if (!conversationListElement) return;
+
+  const contacts = getContacts();
+  const contactNames = new Map(
+    contacts.map(contact => [contact.key, contact.name])
+  );
+
+  const conversations = new Map();
+
+  for (const contact of contacts) {
+    conversations.set(contact.key, {
+      key: contact.key,
+      name: contact.name,
+      latest: null
+    });
+  }
+
+  for (const message of messages) {
+    const otherKey =
+      message.senderKey === myKey
+        ? message.receiverKey
+        : message.senderKey;
+
+    if (!otherKey || otherKey === myKey) continue;
+
+    if (!conversations.has(otherKey)) {
+      conversations.set(otherKey, {
+        key: otherKey,
+        name: contactNames.get(otherKey) || otherKey,
+        latest: message
+      });
+    } else {
+      const conversation = conversations.get(otherKey);
+
+      if (
+        !conversation.latest ||
+        Number(message.id) > Number(conversation.latest.id)
+      ) {
+        conversation.latest = message;
+      }
+    }
+  }
+
+  const readMarkers = getReadMarkers();
+
+  const items = [...conversations.values()].sort((a, b) => {
+    if (!a.latest && !b.latest) return a.name.localeCompare(b.name);
+    if (!a.latest) return 1;
+    if (!b.latest) return -1;
+    return Number(b.latest.id) - Number(a.latest.id);
+  });
+
+  if (items.length === 0) {
+    conversationListElement.innerHTML =
+      '<p class="conversation-empty">No conversations yet. Save a contact or exchange a message to get started.</p>';
+    return;
+  }
+
+  conversationListElement.innerHTML = items.map(item => {
+    const unreadCount = messages.filter(message =>
+      message.senderKey === item.key &&
+      message.receiverKey === myKey &&
+      (Number(message.id) || 0) >
+        (Number(readMarkers[item.key]) || 0)
+    ).length;
+
+    let preview = "No messages yet";
+    let time = "";
+
+    if (item.latest) {
+      try {
+        preview = decodeMessage(item.latest.morse).text;
+      } catch {
+        preview = "Unable to decode message";
+      }
+
+      const date = new Date(item.latest.createdAt);
+
+      time = Number.isNaN(date.getTime())
+        ? ""
+        : date.toLocaleString();
+    }
+
+    return `
+      <button
+        type="button"
+        class="conversation-item ${
+          selectedConversationKey === item.key ? "active" : ""
+        }"
+        data-conversation-key="${escapeHtml(item.key)}"
+      >
+        <span class="conversation-details">
+          <strong>${escapeHtml(item.name)}</strong>
+          <span class="conversation-key">${escapeHtml(item.key)}</span>
+          <span class="conversation-preview">${escapeHtml(preview)}</span>
+        </span>
+        <span class="conversation-meta">
+          <span class="conversation-time">${escapeHtml(time)}</span>
+          ${unreadCount > 0
+            ? `<span class="conversation-unread">${unreadCount}</span>`
+            : ""}
+        </span>
+      </button>
+    `;
+  }).join("");
+
+  conversationListElement
+    .querySelectorAll(".conversation-item")
+    .forEach(button => {
+      button.addEventListener("click", () => {
+        const key = button.dataset.conversationKey;
+
+        selectedConversationKey = key;
+        receiverElement.value = key;
+
+        markConversationRead(key, cachedMessages);
+        renderConversations(cachedMessages);
+        renderMessages(cachedMessages);
+      });
+    });
+}
+
 function renderMessages(messages) {
-  if (messages.length === 0) {
+  const visibleMessages = selectedConversationKey
+    ? messages.filter(message =>
+        (
+          message.senderKey === myKey &&
+          message.receiverKey === selectedConversationKey
+        ) ||
+        (
+          message.senderKey === selectedConversationKey &&
+          message.receiverKey === myKey
+        )
+      )
+    : messages;
+
+  if (visibleMessages.length === 0) {
     messagesElement.innerHTML = `
       <div class="empty">
         <div class="empty-icon">•−−•</div>
@@ -379,7 +588,7 @@ function renderMessages(messages) {
     return;
   }
 
-  messagesElement.innerHTML = messages.map(message => {
+  messagesElement.innerHTML = visibleMessages.map(message => {
     const isReceived =
       message.receiverKey === myKey;
 
@@ -557,6 +766,7 @@ async function sendMessage() {
       return;
     }
 
+    selectedConversationKey = receiverKey;
     messageElement.value = "";
 
     sendStatus.textContent =
@@ -582,6 +792,154 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+
+// Contacts are saved locally in this browser.
+const contactSelect = document.getElementById("contactSelect");
+const contactName = document.getElementById("contactName");
+const contactKey = document.getElementById("contactKey");
+const saveContactButton = document.getElementById("saveContact");
+const useContactButton = document.getElementById("useContact");
+const deleteContactButton = document.getElementById("deleteContact");
+const contactStatus = document.getElementById("contactStatus");
+
+function getContacts() {
+  try {
+    const contacts = JSON.parse(
+      localStorage.getItem("morselinkContacts") || "[]"
+    );
+
+    return Array.isArray(contacts)
+      ? contacts.filter(contact =>
+          contact &&
+          typeof contact.name === "string" &&
+          typeof contact.key === "string" &&
+          /^[A-Z0-9]{6}$/.test(contact.key)
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadContacts(selectedKey = "") {
+  const contacts = getContacts();
+  contactSelect.replaceChildren();
+
+  if (contacts.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No contacts saved yet";
+    contactSelect.appendChild(option);
+  } else {
+    for (const contact of contacts) {
+      const option = document.createElement("option");
+      option.value = contact.key;
+      option.textContent = `${contact.name} (${contact.key})`;
+      contactSelect.appendChild(option);
+    }
+
+    if (contacts.some(contact => contact.key === selectedKey)) {
+      contactSelect.value = selectedKey;
+    }
+  }
+
+  updateContactButtons();
+}
+
+function updateContactButtons() {
+  const hasSelection = Boolean(contactSelect.value);
+  useContactButton.disabled = !hasSelection;
+  deleteContactButton.disabled = !hasSelection;
+}
+
+function useSelectedContact() {
+  const key = contactSelect.value;
+
+  if (!key) {
+    contactStatus.textContent = "Choose a saved contact first.";
+    return;
+  }
+
+  receiverElement.value = key;
+  contactStatus.textContent = "Receiver key filled in.";
+  receiverElement.focus();
+}
+
+saveContactButton.addEventListener("click", () => {
+  const name = contactName.value.trim();
+  const key = contactKey.value.trim().toUpperCase();
+
+  if (!name) {
+    contactStatus.textContent = "Enter a nickname.";
+    contactName.focus();
+    return;
+  }
+
+  if (!/^[A-Z0-9]{6}$/.test(key)) {
+    contactStatus.textContent = "Enter a valid 6-character key.";
+    contactKey.focus();
+    return;
+  }
+
+  if (key === myKey) {
+    contactStatus.textContent = "That's your own key.";
+    return;
+  }
+
+  const contacts = getContacts();
+  const existing = contacts.find(contact => contact.key === key);
+
+  if (existing) {
+    existing.name = name;
+  } else {
+    contacts.push({ name, key });
+  }
+
+  try {
+    localStorage.setItem("morselinkContacts", JSON.stringify(contacts));
+    loadContacts(key);
+    contactName.value = "";
+    contactKey.value = "";
+    contactStatus.textContent = existing
+      ? "Contact nickname updated."
+      : "Contact saved.";
+  } catch {
+    contactStatus.textContent = "Could not save contacts in browser storage.";
+  }
+});
+
+useContactButton.addEventListener("click", useSelectedContact);
+
+contactSelect.addEventListener("change", () => {
+  updateContactButtons();
+
+  if (contactSelect.value) {
+    receiverElement.value = contactSelect.value;
+    contactStatus.textContent = "Receiver key filled in.";
+  }
+});
+
+deleteContactButton.addEventListener("click", () => {
+  const key = contactSelect.value;
+
+  if (!key) {
+    contactStatus.textContent = "Choose a contact to delete.";
+    return;
+  }
+
+  const contacts = getContacts().filter(contact => contact.key !== key);
+
+  try {
+    localStorage.setItem("morselinkContacts", JSON.stringify(contacts));
+    loadContacts();
+    contactStatus.textContent = "Contact deleted.";
+  } catch {
+    contactStatus.textContent = "Could not update browser storage.";
+  }
+});
+
+loadContacts();
 
 sendButton.addEventListener(
   "click",
@@ -618,3 +976,181 @@ initialize().catch(error => {
   sendStatus.textContent =
     "Could not initialize MorseLink.";
 });
+
+
+// Incoming Morse audio: disabled until the user enables it.
+let incomingAudioEnabled = false;
+let morseAudioContext = null;
+
+function playMorseAudio(text) {
+  if (!incomingAudioEnabled || !morseAudioContext) return;
+
+  const ctx = morseAudioContext;
+  const unit = 0.09;
+  let cursor = ctx.currentTime + 0.05;
+
+  for (const character of text.toUpperCase()) {
+    if (character === " ") {
+      cursor += unit * 4;
+      continue;
+    }
+
+    const code = MORSE[character];
+
+    if (!code) {
+      cursor += unit * 3;
+      continue;
+    }
+
+    for (const symbol of code) {
+      const duration = symbol === "." ? unit : unit * 3;
+      const oscillator = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      oscillator.frequency.value = 650;
+      gain.gain.value = 0.12;
+
+      oscillator.connect(gain);
+      gain.connect(ctx.destination);
+
+      oscillator.start(cursor);
+      oscillator.stop(cursor + duration);
+
+      cursor += duration + unit;
+    }
+
+    cursor += unit * 2;
+  }
+}
+
+const incomingAudioToggle =
+  document.getElementById("incomingAudioToggle");
+
+incomingAudioToggle.addEventListener("click", async () => {
+  const AudioContextClass =
+    window.AudioContext || window.webkitAudioContext;
+
+  if (!AudioContextClass) {
+    incomingAudioToggle.textContent = "Audio not supported";
+    return;
+  }
+
+  if (!incomingAudioEnabled) {
+    try {
+      if (!morseAudioContext) {
+        morseAudioContext = new AudioContextClass();
+      }
+
+      await morseAudioContext.resume();
+      incomingAudioEnabled = true;
+      incomingAudioToggle.textContent =
+        "Incoming Morse audio: ON";
+    } catch (error) {
+      console.warn("Could not enable audio:", error);
+      incomingAudioToggle.textContent =
+        "Tap to retry audio";
+    }
+  } else {
+    incomingAudioEnabled = false;
+    incomingAudioToggle.textContent =
+      "Enable incoming Morse audio";
+  }
+});
+
+
+// Browser-side ECDH key registration.
+// Only the public key is sent to the server.
+async function ensureEncryptionKeys() {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error("Web Crypto is unavailable. Use localhost or HTTPS.");
+  }
+
+  const storageKey = `morselinkPrivateKeyJwk:${myKey}`;
+  const savedPrivate = localStorage.getItem(storageKey);
+
+  const response = await fetch(`/api/keys/${myKey}`);
+  if (!response.ok) throw new Error("Could not retrieve public key record.");
+
+  const record = await response.json();
+
+  let privateJwk;
+  let publicKey;
+
+  if (savedPrivate) {
+    privateJwk = JSON.parse(savedPrivate);
+
+    const publicJwk = {
+      kty: privateJwk.kty,
+      crv: privateJwk.crv,
+      x: privateJwk.x,
+      y: privateJwk.y,
+      ext: true
+    };
+
+    const importedPublic = await crypto.subtle.importKey(
+      "jwk",
+      publicJwk,
+      { name: "ECDH", namedCurve: "P-256" },
+      true,
+      []
+    );
+
+    const raw = await crypto.subtle.exportKey("raw", importedPublic);
+    publicKey = btoa(
+      String.fromCharCode(...new Uint8Array(raw))
+    )
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replace(/=+$/g, "");
+
+    if (record.publicKey && record.publicKey !== publicKey) {
+      throw new Error(
+        "This browser's private key does not match the server key. " +
+        "Do not overwrite either key."
+      );
+    }
+  } else {
+    if (record.publicKey) {
+      throw new Error(
+        "A public key already exists, but this browser has no private key. " +
+        "Refusing to replace the registered key."
+      );
+    }
+
+    const pair = await crypto.subtle.generateKey(
+      { name: "ECDH", namedCurve: "P-256" },
+      true,
+      ["deriveKey", "deriveBits"]
+    );
+
+    privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+
+    const raw = await crypto.subtle.exportKey("raw", pair.publicKey);
+    publicKey = btoa(
+      String.fromCharCode(...new Uint8Array(raw))
+    )
+      .replaceAll("+", "-")
+      .replaceAll("/", "_")
+      .replace(/=+$/g, "");
+
+    // Store locally before registration so a network retry won't
+    // accidentally generate a different identity key.
+    localStorage.setItem(storageKey, JSON.stringify(privateJwk));
+  }
+
+  if (!record.publicKey) {
+    const registration = await fetch(`/api/keys/${myKey}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ publicKey })
+    });
+
+    if (!registration.ok) {
+      throw new Error(
+        `Public key registration failed (${registration.status}).`
+      );
+    }
+  }
+
+  console.info("Browser encryption key is registered for", myKey);
+}
